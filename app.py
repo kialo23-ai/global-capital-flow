@@ -11,6 +11,12 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# ==================== 访问密码 ====================
+
+password = st.text_input("请输入访问密码", type="password")
+if password != st.secrets["APP_PASSWORD"]:
+    st.stop()
+
 # ==================== 自定义 CSS ====================
 st.markdown("""
 <style>
@@ -246,9 +252,3 @@ for cat_icon in ["📈", "📊", "💱", "🛢", "🥇", "🥈", "🔩", "🌾",
             render_card(icon, name, value_str, unit, "", delta_pct, is_inflow)
 
 st.caption(f"数据自动刷新 · 最后更新: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-
-# ==================== 渲染看板 ====================
-
-password = st.text_input("请输入访问密码", type="password")
-if password != st.secrets["APP_PASSWORD"]:
-    st.stop()
