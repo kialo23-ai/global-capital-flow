@@ -175,10 +175,40 @@ categories = {
     "🚢": "贸易流 · 实体联通",
 }
 
-def render_card(icon, name, value_str, unit, signal, delta_pct, is_inflow):
-    """渲染单个卡片"""
-    color = "#1a7f37" if is_inflow else "#cf222e"  # 绿色流入 / 红色撤离
-    bg = "#f0fff4" if is_inflow else "#fff0f0"
+# 每个指标的流入方向
+FLOW_DIRECTION = {
+    "标普500": "price_up", "纳斯达克": "price_up", "道琼斯": "price_up",
+    "罗素2000": "price_up", "费城半导体": "price_up", "德国DAX": "price_up",
+    "英国富时100": "price_up", "法国CAC40": "price_up", "日经225": "price_up",
+    "韩国KOSPI": "price_up", "澳洲标普200": "price_up", "印度Nifty50": "price_up",
+    "巴西IBOVESPA": "price_up", "恒生指数": "price_up", "恒生科技": "price_up",
+    "上证指数": "price_up", "沪深300": "price_up",
+
+    "美债2年期": "price_down", "美债10年期": "price_down", "美债30年期": "price_down",
+    "10Y-2Y利差": "price_up", "投资级债利差": "price_down", "高收益债利差": "price_down",
+
+    "美元指数DXY": "dollar_up", "美元广义指数": "dollar_up",
+    "欧元/美元": "price_up", "美元/日元": "price_up",
+    "英镑/美元": "price_up", "美元/人民币": "price_up",
+
+    "WTI原油": "price_up", "布伦特原油": "price_up",
+    "COMEX黄金": "price_up", "COMEX白银": "price_up", "COMEX铜": "price_up",
+    "CBOT大豆": "price_up", "CBOT玉米": "price_up",
+
+    "比特币": "price_up", "以太坊": "price_up",
+
+    "美联储总资产": "price_up", "全球供应链压力": "price_down",
+}
+
+def render_card(icon, name, value_str, unit, delta_pct, is_inflow, use_china=True):
+    """渲染单个卡片。use_china=True 时红涨绿跌，否则绿涨红跌。"""
+    if use_china:
+        color = "#cf222e" if is_inflow else "#1a7f37"
+        bg = "#fff0f0" if is_inflow else "#f0fff4"
+    else:
+        color = "#1a7f37" if is_inflow else "#cf222e"
+        bg = "#f0fff4" if is_inflow else "#fff0f0"
+
     arrow = "↑" if is_inflow else "↓"
     signal_text = "流入" if is_inflow else "撤离"
 
@@ -187,68 +217,131 @@ def render_card(icon, name, value_str, unit, signal, delta_pct, is_inflow):
         background: {bg};
         border-left: 4px solid {color};
         border-radius: 10px;
-        padding: 14px 16px;
-        margin-bottom: 10px;
+        padding: 12px 14px;
+        margin-bottom: 8px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     ">
-        <div style="font-size: 0.85rem; color: #555; margin-bottom: 4px;">
+        <div style="font-size: 0.8rem; color: #555; margin-bottom: 3px;">
             {icon} {name}
         </div>
-        <div style="font-size: 1.15rem; font-weight: 700; color: #222; margin-bottom: 4px;">
-            {value_str} <span style="font-size: 0.8rem; color: #888;">{unit}</span>
+        <div style="font-size: 1.05rem; font-weight: 700; color: #222; margin-bottom: 3px;">
+            {value_str} <span style="font-size: 0.75rem; color: #888;">{unit}</span>
         </div>
-        <div style="font-size: 0.85rem; color: {color}; font-weight: 600;">
+        <div style="font-size: 0.8rem; color: {color}; font-weight: 600;">
             {arrow} {signal_text} ({delta_pct:+.2%})
         </div>
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
 
-# 按大类分组渲染
+# ==================== 配色方案切换 ====================
+color_scheme = st.sidebar.radio(
+    "配色方案",
+    ["中国配色（红涨绿跌）", "国际配色（绿涨红跌）"],
+    index=0
+)
+use_china = color_scheme.startswith("中国")
+
+# ==================== 第一步：收集所有数据，按流入/撤离分类 ====================
+data_by_flow = {"outflow": {}, "inflow": {}}
+
 for cat_icon in ["📈", "📊", "💱", "🛢", "🥇", "🥈", "🔩", "🌾", "💎", "🌊", "🚢"]:
-    cat_name = categories.get(cat_icon, cat_icon)
     items = [ind for ind in INDICATORS if ind[0] == cat_icon]
     if not items:
         continue
 
-    st.markdown(f"#### {cat_icon} {cat_name}")
+    data_by_flow["outflow"][cat_icon] = []
+    data_by_flow["inflow"][cat_icon] = []
 
-    cols = st.columns(4)
-    for i, (icon, name, source, ticker, unit, direction) in enumerate(items):
-        with cols[i % 4]:
-            if source == "fred":
-                current, previous = get_fred_latest(ticker)
-            else:
-                current, previous = get_yf_latest(ticker)
+    for (icon, name, source, ticker, unit, direction) in items:
+        if source == "fred":
+            current, previous = get_fred_latest(ticker)
+        else:
+            current, previous = get_yf_latest(ticker)
 
-            if current is None or previous is None:
-                st.markdown(f"""
-                <div style="background:#f5f5f5; border-radius:10px; padding:14px 16px; margin-bottom:10px;">
-                    <div style="font-size:0.85rem; color:#555;">{icon} {name}</div>
-                    <div style="font-size:1.1rem; color:#999;">数据不可用</div>
-                </div>
-                """, unsafe_allow_html=True)
-                continue
+        if current is None or previous is None:
+            data_by_flow["outflow"][cat_icon].append((icon, name, "—", unit, 0.0, False))
+            continue
 
-            delta_pct = calc_delta(current, previous)
+        delta_pct = calc_delta(current, previous)
+        flow = FLOW_DIRECTION.get(name, "price_up")
 
-            # 判断流入/流出
-            if direction == "inverse":
-                # 收益率上行 = 撤离债市
-                is_inflow = delta_pct < 0
-            else:
-                is_inflow = delta_pct > 0
+        if flow == "price_up":
+            is_inflow = delta_pct > 0
+        elif flow == "price_down":
+            is_inflow = delta_pct < 0
+        elif flow == "dollar_up":
+            is_inflow = delta_pct > 0
+        else:
+            is_inflow = delta_pct > 0
 
-            # 格式化数值
-            if current >= 1_000_000:
-                value_str = f"{current:,.0f}"
-            elif current >= 100:
-                value_str = f"{current:,.2f}"
-            elif current >= 1:
-                value_str = f"{current:.4f}"
-            else:
-                value_str = f"{current:.6f}"
+        if current >= 1_000_000:
+            value_str = f"{current:,.0f}"
+        elif current >= 100:
+            value_str = f"{current:,.2f}"
+        elif current >= 1:
+            value_str = f"{current:.4f}"
+        else:
+            value_str = f"{current:.6f}"
 
-            render_card(icon, name, value_str, unit, "", delta_pct, is_inflow)
+        if is_inflow:
+            data_by_flow["inflow"][cat_icon].append((icon, name, value_str, unit, delta_pct, True))
+        else:
+            data_by_flow["outflow"][cat_icon].append((icon, name, value_str, unit, delta_pct, False))
+
+# ==================== 第二步：渲染两个大板块 ====================
+
+def render_section(flow_key, title, use_china):
+    """渲染一个大板块：标题 + 内部按大类分组"""
+    total = sum(len(cards) for cards in data_by_flow[flow_key].values())
+
+    # 根据配色方案和板块决定标题颜色
+    if flow_key == "outflow":
+        arrow_char = "←"
+        if use_china:
+            title_color = "#1a7f37"   # 中国配色：撤离=绿色
+        else:
+            title_color = "#cf222e"   # 国际配色：撤离=红色
+    else:  # inflow
+        arrow_char = "→"
+        if use_china:
+            title_color = "#cf222e"   # 中国配色：流入=红色
+        else:
+            title_color = "#1a7f37"   # 国际配色：流入=绿色
+
+    st.markdown(f"""
+    <div style="
+        background: {title_color};
+        color: white;
+        padding: 12px 20px;
+        border-radius: 10px;
+        margin: 20px 0 16px 0;
+        font-size: 1.2rem;
+        font-weight: 700;
+    ">
+        {arrow_char} {title} · 共 {total} 项
+    </div>
+    """, unsafe_allow_html=True)
+
+    for cat_icon in ["📈", "📊", "💱", "🛢", "🥇", "🥈", "🔩", "🌾", "💎", "🌊", "🚢"]:
+        cards = data_by_flow[flow_key].get(cat_icon, [])
+        if not cards:
+            continue
+
+        cat_name = categories.get(cat_icon, cat_icon)
+        st.markdown(f"**{cat_icon} {cat_name}**")
+
+        cols = st.columns(4)
+        for i, (icon, name, value_str, unit, delta_pct, is_inflow) in enumerate(cards):
+            with cols[i % 4]:
+                render_card(icon, name, value_str, unit, delta_pct, is_inflow, use_china)
+
+        st.markdown("")
+
+# 渲染撤离板块
+render_section("outflow", "撤离 / Outflow", use_china)
+
+# 渲染流入板块
+render_section("inflow", "流入 / Inflow", use_china)
 
 st.caption(f"数据自动刷新 · 最后更新: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
