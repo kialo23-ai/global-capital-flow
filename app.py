@@ -155,7 +155,6 @@ INDICATORS = [
 
 # ==================== 渲染看板 ====================
 
-# 分类分组
 categories = {
     "📈": "股 · 股票资金流",
     "📊": "债 · 债券资金流",
@@ -170,6 +169,35 @@ categories = {
     "🚢": "贸易流 · 实体联通",
 }
 
+def render_card(icon, name, value_str, unit, signal, delta_pct, is_inflow):
+    """渲染单个卡片"""
+    color = "#1a7f37" if is_inflow else "#cf222e"  # 绿色流入 / 红色撤离
+    bg = "#f0fff4" if is_inflow else "#fff0f0"
+    arrow = "↑" if is_inflow else "↓"
+    signal_text = "流入" if is_inflow else "撤离"
+
+    html = f"""
+    <div style="
+        background: {bg};
+        border-left: 4px solid {color};
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    ">
+        <div style="font-size: 0.85rem; color: #555; margin-bottom: 4px;">
+            {icon} {name}
+        </div>
+        <div style="font-size: 1.15rem; font-weight: 700; color: #222; margin-bottom: 4px;">
+            {value_str} <span style="font-size: 0.8rem; color: #888;">{unit}</span>
+        </div>
+        <div style="font-size: 0.85rem; color: {color}; font-weight: 600;">
+            {arrow} {signal_text} ({delta_pct:+.2%})
+        </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
 # 按大类分组渲染
 for cat_icon in ["📈", "📊", "💱", "🛢", "🥇", "🥈", "🔩", "🌾", "💎", "🌊", "🚢"]:
     cat_name = categories.get(cat_icon, cat_icon)
@@ -182,26 +210,28 @@ for cat_icon in ["📈", "📊", "💱", "🛢", "🥇", "🥈", "🔩", "🌾",
     cols = st.columns(4)
     for i, (icon, name, source, ticker, unit, direction) in enumerate(items):
         with cols[i % 4]:
-            # 获取数据
             if source == "fred":
                 current, previous = get_fred_latest(ticker)
             else:
                 current, previous = get_yf_latest(ticker)
 
             if current is None or previous is None:
-                st.metric(label=f"{icon} {name}", value="—", delta="数据不可用")
+                st.markdown(f"""
+                <div style="background:#f5f5f5; border-radius:10px; padding:14px 16px; margin-bottom:10px;">
+                    <div style="font-size:0.85rem; color:#555;">{icon} {name}</div>
+                    <div style="font-size:1.1rem; color:#999;">数据不可用</div>
+                </div>
+                """, unsafe_allow_html=True)
                 continue
 
             delta_pct = calc_delta(current, previous)
 
-            # 根据方向决定颜色
+            # 判断流入/流出
             if direction == "inverse":
-                # 收益率上行 = 撤离债市 = 红色
-                delta_color = "inverse"
-                signal = "↓ 撤离" if delta_pct > 0 else "↑ 流入"
+                # 收益率上行 = 撤离债市
+                is_inflow = delta_pct < 0
             else:
-                delta_color = "normal"
-                signal = "↑ 流入" if delta_pct > 0 else "↓ 撤离"
+                is_inflow = delta_pct > 0
 
             # 格式化数值
             if current >= 1_000_000:
@@ -213,11 +243,6 @@ for cat_icon in ["📈", "📊", "💱", "🛢", "🥇", "🥈", "🔩", "🌾",
             else:
                 value_str = f"{current:.6f}"
 
-            st.metric(
-                label=f"{icon} {name}",
-                value=f"{value_str} {unit}",
-                delta=f"{signal} ({delta_pct:+.2%})",
-                delta_color=delta_color
-            )
+            render_card(icon, name, value_str, unit, "", delta_pct, is_inflow)
 
 st.caption(f"数据自动刷新 · 最后更新: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
